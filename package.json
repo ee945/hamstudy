@@ -1,0 +1,24 @@
+{
+  "name": "hamstudy",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "HamStudy - FCC 业余无线电执照题库学习站",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview --port 4173",
+    "verify:bank": "python3 tools/verify_bank_data.py",
+    "pb": "cd pb && ./bin/pocketbase --dir ./pb_data serve --http 127.0.0.1:8199"
+  },
+  "dependencies": {
+    "pocketbase": "^0.25.1",
+    "pinia": "^2.3.1",
+    "vue": "^3.5.13",
+    "vue-router": "^4.5.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "vite": "^6.0.7"
+  }
+}

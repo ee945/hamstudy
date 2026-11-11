@@ -1,0 +1,207 @@
+/* ============================================================
+   HamStudy 设计令牌
+   方向：明亮卡片 + 无线电质感
+   ============================================================ */
+:root {
+  /* ---  neutral：纸面与卡片 --- */
+  --bg: #f4f6f8;
+  --bg-grid: #e8ecf0;
+  --surface: #ffffff;
+  --surface-2: #fafbfc;
+  --surface-sunken: #f1f3f6;
+
+  /* --- 文字 --- */
+  --text: #1a1d21;
+  --text-2: #5a6169;
+  --text-3: #8b939c;
+  --text-invert: #ffffff;
+
+  /* --- 描边 --- */
+  --line: #e3e7ec;
+  --line-2: #d2d8df;
+
+  /* --- 级别主色 --- */
+  --tech: #2f9e6e;
+  --tech-soft: #e6f5ee;
+  --gen: #3182ce;
+  --gen-soft: #e5f0fb;
+  --extra: #7c53e8;
+  --extra-soft: #efe9fd;
+
+  /* --- 语义色 --- */
+  --accent: #f59f00;
+  --accent-soft: #fff4dc;
+  --ok: #2f9e6e;
+  --ok-soft: #e6f5ee;
+  --err: #e03131;
+  --err-soft: #ffe9e9;
+  --warn: #f08c00;
+  --star: #f5a524;
+
+  /* --- 圆角与阴影 --- */
+  --r-sm: 8px;
+  --r: 12px;
+  --r-lg: 16px;
+  --r-xl: 22px;
+  --sh-1: 0 1px 2px rgba(16, 24, 40, .05);
+  --sh-2: 0 2px 8px rgba(16, 24, 40, .07);
+  --sh-3: 0 8px 24px rgba(16, 24, 40, .10);
+  --ring: 0 0 0 3px rgba(49, 130, 206, .16);
+
+  /* --- 排版 --- */
+  --font: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB",
+          "Microsoft YaHei", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+
+  --header-h: 60px;
+  --side-w: 268px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 所有页面恒定保留右侧滚动条槽位。
+   经典滚动条会占掉约 10px 宽度：内容长的页面出现滚动条后，
+   居中的头部（max-width:1220px; margin:0 auto）与页面容器会整体左移 5px，
+   于是不同导航页之间看起来「差半个身位」。槽位恒定后 clientWidth 不再变化，
+   六个页面的导航与内容位置完全一致；短页面只是多一条不抢眼的轨道。 */
+html {
+  overflow-y: scroll;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-2) transparent;
+}
+
+/* 无线电质感：极淡的网格底色，仅在大屏容器上出现 */
+.bg-grid {
+  background-image:
+    linear-gradient(var(--bg-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--bg-grid) 1px, transparent 1px);
+  background-size: 24px 24px;
+  background-position: -1px -1px;
+}
+
+h1, h2, h3, h4 { margin: 0; font-weight: 650; line-height: 1.3; letter-spacing: -.01em; }
+h1 { font-size: 24px; }
+h2 { font-size: 19px; }
+h3 { font-size: 16px; }
+p  { margin: 0; }
+a  { color: inherit; text-decoration: none; }
+
+button {
+  font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+  color: inherit;
+}
+input, select, textarea {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+/* ---------- 通用原子 ---------- */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-1);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 16px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line-2);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 500;
+  transition: .15s ease;
+  white-space: nowrap;
+}
+.btn:hover { background: var(--surface-sunken); border-color: var(--text-3); }
+.btn:active { transform: translateY(1px); }
+.btn-primary {
+  background: var(--text);
+  color: var(--text-invert);
+  border-color: var(--text);
+}
+.btn-primary:hover { background: #000; border-color: #000; }
+.btn-sm { height: 30px; padding: 0 11px; font-size: 13px; border-radius: 7px; }
+.btn-ghost { border-color: transparent; background: transparent; }
+.btn-ghost:hover { background: var(--surface-sunken); border-color: transparent; }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  height: 21px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--surface-sunken);
+  color: var(--text-2);
+}
+
+.qid {
+  font-family: var(--mono);
+  font-size: 13px;
+  letter-spacing: .02em;
+  color: var(--text-2);
+}
+
+/* ---------- 难度点阵 ---------- */
+.diff {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.diff i {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--line-2);
+}
+.diff i.on { background: var(--star); }
+.diff.lv1 i.on { background: #74c476; }
+.diff.lv2 i.on { background: #74c476; }
+.diff.lv3 i.on { background: var(--star); }
+.diff.lv4 i.on { background: var(--star); }
+
+/* ---------- 滚动条 ---------- */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb {
+  background: #cfd5dc;
+  border-radius: 6px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background: #b6bec7; background-clip: content-box; }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* ---------- 动效 ---------- */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+.fade-up { animation: fadeUp .22s ease both; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}

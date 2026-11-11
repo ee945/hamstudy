@@ -1,0 +1,59 @@
+# nginx 站点模板。改 .env 后 python3 tools/config.py render，生成
+# deploy/nginx.generated.conf → sudo cp 到 NGINX_CONF → nginx -t && reload。
+# 占位符全部由 .env 派生，产物不入库；dist/ 由 npm ci && npm run build 生成。
+# 只放行 80/443，__PB_PORT__ 仅绑回环；/pb/_/ 后台务必套 HTTPS。
+# certbot 接管 443 后在 .env 设 NGINX_SYNC=0。
+
+server {
+    listen       __LISTEN_ADDR__:__SITE_PORT__;
+    server_name  __SERVER_NAME__;
+    root         __DEPLOY_ROOT__/dist;
+    index        index.html;
+    charset      utf-8;
+    server_tokens off;
+
+    access_log   __DEPLOY_ROOT__/logs/hamstudy.access.log;
+    error_log    __DEPLOY_ROOT__/logs/hamstudy.error.log warn;
+    client_max_body_size 8m;
+
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_types text/plain text/css application/json application/javascript
+               application/x-javascript text/xml application/xml image/svg+xml;
+
+    # SPA 路由；index.html 不强缓存
+    location / {
+        add_header Cache-Control "no-cache" always;
+        try_files $uri $uri/ /index.html;
+    }
+
+    # /pb/api/xxx → 127.0.0.1:__PB_PORT__/api/xxx（结尾 / 剥掉前缀）
+    location /pb/ {
+        proxy_pass         http://127.0.0.1:__PB_PORT__/;
+        proxy_http_version 1.1;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;
+        proxy_buffering    off;   # SSE 必须关缓冲
+        proxy_cache        off;
+        chunked_transfer_encoding on;
+    }
+
+    # 题库 JSON：no-cache + ETag，译文改了立刻生效
+    location /data/ {
+        expires off;
+        add_header Cache-Control "no-cache" always;
+        try_files $uri =404;
+    }
+
+    location /assets/ {
+        expires 7d;
+        access_log off;
+        try_files $uri =404;
+    }
+
+    location ~ /\.(?!well-known) { deny all; }
+}

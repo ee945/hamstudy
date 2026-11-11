@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96" role="img" aria-label="QSL 卡片">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#a16207"/>
+      <stop offset="1" stop-color="#854d0e"/>
+    </linearGradient>
+    <clipPath id="clip"><circle cx="48" cy="48" r="48"/></clipPath>
+  </defs>
+  <g clip-path="url(#clip)">
+    <circle cx="48" cy="48" r="48" fill="url(#bg)"/>
+    <g transform="translate(24,24)" fill="none" stroke="#fff" stroke-width="4.2"
+       stroke-linecap="round" stroke-linejoin="round">
+      <g transform="rotate(-9 24 24)">
+        <rect x="8" y="12" width="28" height="24" rx="2.5"/>
+        <path d="M12 20h14M12 26h10M12 32h16"/>
+        <rect x="28" y="15" width="6" height="6" rx="1"/>
+      </g>
+    </g>
+  </g>
+</svg>

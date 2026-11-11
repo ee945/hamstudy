@@ -1,0 +1,34 @@
+# 入库：源码 + public/data 题库权威源 + 迁移 + 钩子 + 模板
+# 不入库：运行时数据、平台二进制、构建产物、本机配置
+
+# 运行时数据（含凭据与用户数据）
+pb/pb_data/
+.env
+.env.*
+!.env.example
+deploy/*.generated.*
+
+# 依赖与构建产物
+node_modules/
+dist/
+*.log
+logs/*
+!logs/.gitkeep
+data_backup/
+__pycache__/
+*.pyc
+
+# 平台二进制（按目标平台自行下载，不入库）
+pb/bin/pocketbase
+pb/bin/pocketbase.exe
+pb/bin/*.zip
+
+# 杂项
+*.tmp
+*.bak
+*~
+*.swp
+.idea/
+.vscode/
+Thumbs.db
+**/.DS_Store

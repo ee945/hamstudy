@@ -1,0 +1,25 @@
+# systemd 单元模板。改 .env 的 PB_PORT / SERVICE_USER 后 python3 tools/config.py render，
+# sudo cp 生成文件到 /etc/systemd/system/<项目目录名>.service，
+# 再 systemctl daemon-reload && enable --now <项目目录名>。
+# User 需可写 ReadWritePaths 四个目录；PB 只绑 127.0.0.1，勿放行防火墙。
+
+[Unit]
+Description=HamStudy PocketBase
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__SERVICE_USER__
+WorkingDirectory=__DEPLOY_ROOT__
+ExecStart=__DEPLOY_ROOT__/pb/bin/pocketbase --dir __DEPLOY_ROOT__/pb/pb_data serve --http 127.0.0.1:__PB_PORT__
+Restart=always
+RestartSec=3
+LimitNOFILE=65535
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=__DEPLOY_ROOT__/pb/pb_data __DEPLOY_ROOT__/public/data __DEPLOY_ROOT__/dist/data __DEPLOY_ROOT__/logs
+
+[Install]
+WantedBy=multi-user.target

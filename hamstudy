@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+# HamStudy 本机开发用服务控制: start / stop / status / config / nginx / build / dev / help
+# 项目根由脚本所在目录自动推断，clone 到任意路径都能直接用。
+# ★ Linux 云主机请用 systemd 单元常驻（模板见 deploy/pocketbase.service.example），
+#   不要用本脚本的 nohup start；本脚本在这类机器上仅适合 status / config 排查。
+#
+# ★ 端口只在项目根 .env 里配置（PB_PORT / SITE_PORT）。
+#   本脚本、运维脚本、回归脚本、nginx 配置都由 tools/config.py 从 .env 派生，
+#   改端口不需要动任何其它文件。临时覆盖可用 PB_PORT=8299 ./hamstudy start。
+set -u
+
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+PB="$ROOT/pb/bin/pocketbase"
+CFG="$ROOT/tools/config.py"
+LOG_DIR="$ROOT/logs"
+
+# 从 .env 取两个端口；config.py 会校验合法性并保留 shell 环境变量优先级。
+# 输出严格是 PB_PORT=数字 / SITE_PORT=数字 两行，eval 是安全的。
+CFG_PORTS="$(python3 "$CFG" ports)" || exit 1
+eval "$CFG_PORTS"
+SITE="http://127.0.0.1:${SITE_PORT}"
+
+pb_running() { lsof -nP -iTCP:$PB_PORT -sTCP:LISTEN >/dev/null 2>&1 && echo 1 || echo 0; }
+
+# 渲染部署配置，并在端口变化时同步本机 nginx（只改端口数字，不动其它定制）。
+# NGINX_SYNC=0 可关闭自动同步；云主机上找不到本机配置时只生成文件。
+sync_nginx() {
+  [ "${NGINX_SYNC:-1}" = "0" ] && return 0
+  python3 "$CFG" sync || echo "(nginx 同步未成功，请检查 tools/config.py sync 输出)"
+}
+
+case "${1:-help}" in
+  start)
+    mkdir -p "$LOG_DIR"
+    sync_nginx
+    if [ "$(pb_running)" = "0" ]; then
+      cd "$ROOT" && nohup "$PB" --dir ./pb/pb_data serve --http 127.0.0.1:$PB_PORT \
+        >>"$LOG_DIR/hamstudy-pb.log" 2>&1 &
+      echo "PocketBase 已启动 (:$PB_PORT)"
+    else
+      echo "PocketBase 已在运行 (:$PB_PORT)"
+    fi
+    if ! lsof -nP -iTCP:$SITE_PORT -sTCP:LISTEN >/dev/null 2>&1; then
+      nginx >/dev/null 2>&1 && echo "nginx 已启动"
+    fi
+    sleep 2
+    curl -s --noproxy '*' --max-time 5 http://127.0.0.1:$PB_PORT/api/health || echo "(等待健康检查失败)"
+    echo
+    echo "站点: $SITE     后台: $SITE/pb/_/"
+    ;;
+  stop)
+    for p in $(lsof -nP -iTCP:$PB_PORT -sTCP:LISTEN -t 2>/dev/null); do kill "$p" && echo "PocketBase 已停止 (:$PB_PORT)"; done
+    ;;
+  status)
+    echo "PocketBase :$PB_PORT  $( [ "$(pb_running)" = 1 ] && echo ✓运行中 || echo ✗未运行 )"
+    echo "nginx      :$SITE_PORT  $( lsof -nP -iTCP:$SITE_PORT -sTCP:LISTEN >/dev/null 2>&1 && echo ✓运行中 || echo ✗未运行 )"
+    curl -s --noproxy '*' --max-time 5 "$SITE/pb/api/health" >/dev/null 2>&1 \
+      && echo "站点 $SITE ✓可访问" || echo "站点 $SITE ✗不可访问"
+    ;;
+  config)
+    python3 "$CFG" show
+    ;;
+  nginx)
+    # 单独重新渲染 + 同步，可加 --dry-run 只看不改
+    python3 "$CFG" sync ${2:-}
+    ;;
+  build)
+    cd "$ROOT" && npm run build
+    ;;
+  dev)
+    cd "$ROOT" && npm run dev
+    ;;
+  *)
+    cat <<EOF
+用法: hamstudy <命令>
+  start   启动 PocketBase + nginx，并自动同步 nginx 端口（本机开发用）
+  stop    停止 PocketBase
+  status  查看各服务运行状态
+  config  显示 .env 解析后的端口与地址
+  nginx   重新生成部署配置并同步 nginx（可加 --dry-run）
+  build   构建前端生产包到 dist/
+  dev     启动 Vite 开发服务器
+
+★ 改端口 / 监听地址只需编辑项目根 .env，然后 ./hamstudy start。
+  当前：PB_PORT=$PB_PORT  SITE_PORT=$SITE_PORT   站点 $SITE
+  临时覆盖：PB_PORT=8299 ./hamstudy start（不写文件，单次生效）
+★ Linux 云主机请用 systemd：sudo systemctl enable --now <项目目录名>，
+  用 ./hamstudy status 与 python3 tools/verify_bank_data.py 验收。
+EOF
+    ;;
+esac
