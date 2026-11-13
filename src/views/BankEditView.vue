@@ -12,7 +12,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useBank, slugOf } from '../stores/bank'
-import { saveBankQuestion } from '../lib/bankFiles'
+import { fetchBankSyncStatus, saveBankQuestion, syncBankFiles } from '../lib/bankFiles'
 
 const LETTERS = ['A', 'B', 'C', 'D']
 const LEVEL_NAME = { technician: '技术级', general: '通用级', extra: '业余特级' }
@@ -25,6 +25,15 @@ const current = ref('')
 const form = ref(null)
 const msg = ref(null)
 const saving = ref(false)
+
+// 发布同步：public/data（git 权威源）→ dist/data（nginx 实际读取）。
+// 钩子是启动时加载的，旧版本服务端没有 sync-status 这个 action，会返回 400，
+// 那时静默隐藏卡片即可，不影响本页原有的单题编辑功能。
+const syncInfo = ref(null)
+const syncBusy = ref(false)
+const syncAvailable = ref(false)
+const syncDirty = computed(() => (syncInfo.value?.files || []).filter((f) => f.state !== 'same'))
+const syncPending = computed(() => syncInfo.value?.pending || 0)
 
 const slug = computed(() => slugOf(current.value))
 const raw = computed(() => bank.rawIndex[slug.value]?.get(current.value) || null)
@@ -107,9 +116,39 @@ async function save() {
   }
 }
 
+async function checkSync() {
+  try {
+    syncInfo.value = await fetchBankSyncStatus()
+    syncAvailable.value = true
+  } catch {
+    // 未登录 / 非管理员 / 旧版钩子：隐藏卡片，保持页面可用
+    syncAvailable.value = false
+    syncInfo.value = null
+  }
+}
+
+async function doSync() {
+  if (syncBusy.value || !syncPending.value) return
+  syncBusy.value = true
+  try {
+    const r = await syncBankFiles()
+    await checkSync()
+    await bank.refreshAll()
+    toast(true, r.synced?.length
+      ? `已同步 ${r.synced.length} 个文件到 dist/data，线上立即生效`
+      : '两个目录本来就一致，无需同步')
+  } catch (e) {
+    toast(false, e?.message || String(e))
+    await checkSync()
+  } finally {
+    syncBusy.value = false
+  }
+}
+
 onMounted(async () => {
   await bank.fetchMeta()
   await load(String(route.query.q || '').trim() || 'T1A01')
+  checkSync()
 })
 </script>
 
@@ -120,12 +159,53 @@ onMounted(async () => {
       <p>
         直接改写 <code>public/data/q_*.json</code> 的出厂原文。三个 JSON 是本站唯一权威数据源，
         保存后同时写入 <code>dist/data</code>，线上立即生效，无需重新构建。
+        从 git 拉取了别人提交的译文后，用下方「发布同步」把新原文同步到运行目录。
       </p>
       <p class="be-warn">
         本页修改不写入修订日志、不进审核流、不产生历史版本；编辑员的正常修订仍按原流程留痕。
         若某题已有通过的人工修订，前台题面仍以修订为准，本页编辑的是被叠加的底层原文。
         题号、小节、正确答案与选项顺序不可修改。
       </p>
+    </section>
+
+    <section v-if="syncAvailable && syncInfo" class="card be-sync">
+      <div class="be-sync-h">
+        <div>
+          <h3>发布同步 · public/data → dist/data</h3>
+          <p class="be-sync-desc">
+            <code>git pull</code> 只更新仓库里的 <code>public/data</code>，站点实际读取的是
+            <code>dist/data</code>。这里把新题库一键同步到运行目录，
+            <strong>不用重新构建、不用重启服务</strong>。
+          </p>
+        </div>
+        <button class="btn btn-sm" :disabled="syncBusy" @click="checkSync">重新检查</button>
+      </div>
+
+      <div class="be-sync-state" :class="syncPending ? 'dirty' : 'clean'">
+        <template v-if="syncPending">
+          <strong>检测到 {{ syncPending }} 个题库文件有更新，尚未同步到线上</strong>
+          <ul>
+            <li v-for="f in syncDirty" :key="f.name">
+              <code>{{ f.name }}</code>
+              <span>{{ f.state === 'missing' ? '运行目录缺少此文件' : '内容与运行目录不同' }}</span>
+            </li>
+          </ul>
+        </template>
+        <template v-else>
+          <strong>✓ 四个题库文件已一致</strong>
+          <span class="be-sync-sub">public/data 与 dist/data 内容相同，无需操作</span>
+        </template>
+      </div>
+
+      <div class="be-sync-actions">
+        <button class="btn btn-primary" :disabled="syncBusy || !syncPending" @click="doSync">
+          {{ syncBusy ? '同步中…' : syncPending ? `同步 ${syncPending} 个文件到 dist/data` : '已是最新' }}
+        </button>
+        <span class="be-hint">
+          只覆盖 <code>dist/data</code> 的固定四个 JSON，不改动仓库源文件、不写修订日志；
+          不会覆盖当前未保存的表单，重新定位题目即可刷新原文
+        </span>
+      </div>
     </section>
 
     <section class="card be-bar">
@@ -213,8 +293,21 @@ onMounted(async () => {
   flex-direction: column;
   gap: 16px;
 }
-.be-head, .be-bar, .be-form, .be-empty { padding: 20px 22px; }
+.be-head, .be-sync, .be-bar, .be-form, .be-empty { padding: 20px 22px; }
 .be h2 { margin: 0 0 10px; font-size: 19px; }
+.be-sync-h { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.be-sync h3 { margin: 0 0 8px; font-size: 15px; }
+.be-sync-desc { margin: 0; font-size: 13px; line-height: 1.7; color: var(--text-2); }
+.be-sync-state {
+  margin: 14px 0; padding: 12px 14px; border-radius: var(--r-sm);
+  font-size: 13px; line-height: 1.7;
+}
+.be-sync-state.dirty { background: var(--accent-soft); border-left: 3px solid var(--accent); }
+.be-sync-state.clean { background: var(--surface-sunken); border-left: 3px solid var(--ok); }
+.be-sync-state ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+.be-sync-state li span { margin-left: 8px; color: var(--text-2); }
+.be-sync-sub { margin-left: 10px; color: var(--text-2); }
+.be-sync-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .be p { font-size: 13.5px; line-height: 1.75; color: var(--text-2); }
 .be code {
   font-family: var(--mono, monospace);

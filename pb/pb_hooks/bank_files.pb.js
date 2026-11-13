@@ -4,6 +4,13 @@
 // 「题库原文编辑」页直接改写它们；编辑员的 hs_edits / hs_edit_logs 修订流
 // 保持独立叠加与留痕，本钩子不碰那两张表，也不产生任何历史版本或备份。
 //
+// /bank/write 支持三种 action：
+//   （默认）单题写回：{ qid, fields }
+//   restore        ：整份备份恢复
+//   sync-status    ：只读比对 public/data 与 dist/data，返回待同步清单
+//   sync           ：把 public/data 的四个权威 JSON 同步到 dist/data
+// 后两个用于「git pull 拉到新题库后，不用重新构建就让线上生效」的场景。
+//
 // 安全边界（改之前务必看完）：
 //   1) 路由白名单：只认固定四个文件名，绝不接受路径参数，杜绝目录穿越。
 //   2) 中间件 $apis.requireAuth("users", "_superusers") 由服务端校验 token
@@ -52,12 +59,16 @@ routerAdd("POST", "/bank/write", function (e) {
     return ""
   }
 
-  function readDoc(path) {
+  function readText(path) {
     // $os.readFile 返回的是 UTF-8 字节数组（Array<number>），不是字符串。
     // 运行时内置的 toString() 会按 UTF-8 正确解码，直接 String(raw) 会得到
     // "123,34,..." 这种逗号拼接的字节串，中文题干会全毁。
     var raw = $os.readFile(path)
-    return JSON.parse(typeof raw === "string" ? raw : toString(raw))
+    return typeof raw === "string" ? raw : toString(raw)
+  }
+
+  function readDoc(path) {
+    return JSON.parse(readText(path))
   }
 
   function writeDoc(path, doc) {
@@ -149,6 +160,39 @@ routerAdd("POST", "/bank/write", function (e) {
     return ""
   }
 
+  // 逐字符比对两处文件。不能用 size + mtime 判断：译文等长修改时两者都可能
+  // 不变，却会漏同步，甚至让 nginx ETag 不变、浏览器一直拿 304 旧题面。
+  // status 只做文本比较，不 JSON.parse，保持轻量；写前的结构校验放在 sync 里。
+  function inspect(root) {
+    var out = []
+    for (var i = 0; i < ALL_FILES.length; i++) {
+      var name = ALL_FILES[i]
+      var item = { name: name, state: "error", error: "" }
+      try {
+        var a = readText(root + "/public/data/" + name)
+        try {
+          var b = readText(root + "/dist/data/" + name)
+          item.state = a === b ? "same" : "diff"
+        } catch (e2) {
+          item.state = "missing"
+          item.error = "dist/data 不可读：" + String(e2)
+        }
+      } catch (e1) {
+        item.error = "public/data 不可读：" + String(e1)
+      }
+      out.push(item)
+    }
+    return out
+  }
+
+  function pendingOf(files) {
+    var n = 0
+    for (var i = 0; i < files.length; i++) {
+      if (files[i].state !== "same") n++
+    }
+    return n
+  }
+
   // ---------------- 请求分发 ----------------
   if (!guard(e)) return e.json(403, { ok: false, error: "仅管理员可直接改写题库原文" })
   var root = rootDir()
@@ -179,6 +223,90 @@ routerAdd("POST", "/bank/write", function (e) {
     } catch (err) {
       return e.json(500, { ok: false, error: String(err) })
     }
+  }
+
+  // 只读：git pull 之后让编辑页显示「有几个题库文件尚未同步到运行目录」
+  if (b.action === "sync-status") {
+    var state0 = inspect(root)
+    return e.json(200, {
+      ok: true,
+      action: "sync-status",
+      files: state0,
+      pending: pendingOf(state0)
+    })
+  }
+
+  // 发布同步：public/data（git 权威源）→ dist/data（nginx 实际读取）。
+  // 步骤：先把四个源文件全部读出并做完整结构校验，任何一个坏掉都整体中止，
+  // 再逐个原样写入，最后读回比对。绝不接受请求里的路径 / 文件名参数。
+  if (b.action === "sync") {
+    var sources = []
+    for (var s = 0; s < ALL_FILES.length; s++) {
+      var nm = ALL_FILES[s]
+      var txt = ""
+      try {
+        txt = readText(root + "/public/data/" + nm)
+      } catch (er) {
+        return e.json(500, { ok: false, error: nm + " 读取失败：" + String(er) })
+      }
+      var parsed
+      try {
+        parsed = JSON.parse(txt)
+      } catch (er) {
+        return e.json(400, { ok: false, error: nm + " 不是合法 JSON：" + String(er) })
+      }
+      var verr = validateDoc(nm, parsed)
+      if (verr) {
+        return e.json(400, { ok: false, error: "同步已中止（源文件内容不合法）：" + verr })
+      }
+      sources.push([nm, txt])
+    }
+
+    try {
+      $os.stat(root + "/dist/data")
+    } catch (er) {
+      return e.json(500, { ok: false, error: "dist/data 不存在，请先执行 npm run build" })
+    }
+
+    var before = inspect(root)
+    var synced = [], skipped = [], failed = []
+    for (var t = 0; t < sources.length; t++) {
+      var fname = sources[t][0], text = sources[t][1]
+      var isSame = false
+      for (var k2 = 0; k2 < before.length; k2++) {
+        if (before[k2].name === fname && before[k2].state === "same") { isSame = true; break }
+      }
+      if (isSame) { skipped.push(fname); continue }
+      try {
+        // 原样写文本（不 JSON.stringify），保证与 public/data 逐字节一致，
+        // 也便于用 cmp 验收；420 = 0644，nginx worker 可读。
+        $os.writeFile(root + "/dist/data/" + fname, text, 420)
+        if (readText(root + "/dist/data/" + fname) !== text) {
+          failed.push(fname + "（写回校验不一致）")
+        } else {
+          synced.push(fname)
+        }
+      } catch (er) {
+        failed.push(fname + "（" + String(er) + "）")
+      }
+    }
+
+    var after = inspect(root)
+    var stillBad = []
+    for (var z = 0; z < after.length; z++) {
+      if (after[z].state !== "same") stillBad.push(after[z].name)
+    }
+    var clean = failed.length === 0 && stillBad.length === 0
+    return e.json(clean ? 200 : 500, {
+      ok: clean,
+      action: "sync",
+      synced: synced,
+      skipped: skipped,
+      failed: failed,
+      pending: pendingOf(after),
+      files: after,
+      error: clean ? "" : "部分文件未同步：" + failed.concat(stillBad).join("、")
+    })
   }
 
   // 单题写回：管理员在编辑页改完一道题点保存

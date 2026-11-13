@@ -42,6 +42,24 @@ export function restoreBankBackup(backup) {
   return post({ action: 'restore', kind: backup.kind, files: backup.files })
 }
 
+/**
+ * 只读：比对服务器磁盘上 public/data 与 dist/data 的四个 JSON。
+ * git pull 之后 public/data 会变，dist/data 不入库，这里能看出还差几个文件没发布。
+ * 返回 { ok, files: [{ name, state: same|diff|missing|error, error }], pending }
+ */
+export function fetchBankSyncStatus() {
+  return post({ action: 'sync-status' })
+}
+
+/**
+ * 把 public/data 的四个权威 JSON 原样同步到 dist/data。
+ * 服务端先做完整结构校验再整体写入，写完读回比对；只碰固定四个文件名。
+ * 返回 { ok, synced: [...], skipped: [...], pending, files }
+ */
+export function syncBankFiles() {
+  return post({ action: 'sync' })
+}
+
 function stamp(d = new Date()) {
   const p = (n) => String(n).padStart(2, '0')
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`
